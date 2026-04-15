@@ -105,7 +105,7 @@ jobs:
       # Pinned to v6.0.0. Verify SHA via:
       #   gh api repos/release-drafter/release-drafter/git/refs/tags/v6.0.0
       # Note: dependabot will likely propose a bump to v6.x on first run.
-      - uses: release-drafter/release-drafter@3f0f87098bd6b5c5b9a36d49c41d998ea58f9348 # v6.0.0
+      - uses: release-drafter/release-drafter@5de93583980a40bd78603b6dfdcda5b4df377b32 # v7.2.0
         with:
           config-name: release-drafter.yml
           disable-releaser: true
