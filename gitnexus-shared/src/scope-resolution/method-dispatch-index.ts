@@ -71,6 +71,14 @@ export interface MethodDispatchInput {
    * returned.
    *
    * Repeated IDs in the output are deduplicated automatically.
+   *
+   * **Call-count contract.** `implementsOf` is invoked **once per
+   * occurrence** of an owner in `input.owners`, not once per unique
+   * owner. Duplicate owners therefore re-invoke it; dedup happens at
+   * the bucket layer (after the callback returns). Callers with
+   * expensive `implementsOf` implementations should pass a deduplicated
+   * `owners` list. `computeMro`, by contrast, is memoized by the first-
+   * write-wins policy and fires at most once per unique owner.
    */
   readonly implementsOf: (ownerDefId: DefId) => readonly DefId[];
 }
@@ -113,14 +121,14 @@ export function buildMethodDispatchIndex(input: MethodDispatchInput): MethodDisp
     implsByInterfaceDefId.set(ifaceId, Object.freeze(owners.slice()));
   }
 
-  return freezeIndex(mroByOwnerDefId, implsByInterfaceDefId);
+  return wrapIndex(mroByOwnerDefId, implsByInterfaceDefId);
 }
 
 // ─── Internal ───────────────────────────────────────────────────────────────
 
 const EMPTY: readonly DefId[] = Object.freeze([]);
 
-function freezeIndex(
+function wrapIndex(
   mroByOwnerDefId: Map<DefId, readonly DefId[]>,
   implsByInterfaceDefId: Map<DefId, readonly DefId[]>,
 ): MethodDispatchIndex {
