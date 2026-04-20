@@ -9,7 +9,7 @@
 
   <h2>Join the official Discord to discuss ideas, issues etc!</h2>
 
-  <a href="https://discord.gg/AAsRVT6fGb">
+  <a href="https://discord.gg/MgJrmsqr62">
     <img src="https://img.shields.io/discord/1477255801545429032?color=5865F2&logo=discord&logoColor=white" alt="Discord"/>
   </a>
   <a href="https://www.npmjs.com/package/gitnexus">
