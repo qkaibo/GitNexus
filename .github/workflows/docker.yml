@@ -184,9 +184,14 @@ jobs:
             type=semver,pattern={{major}}
             type=raw,value=${{ steps.version.outputs.version }},enable=${{ inputs.tag != '' }}
 
+      # Transient 502s from GHCR / Docker Hub / GHA cache during multi-platform
+      # exports are retried inside `.github/actions/docker-build-push-retry`
+      # (see docker/build-push-action#1422 — retry policy stays out of the
+      # upstream action). `ignore-error=true` on cache-to avoids cache export
+      # flakes failing an otherwise successful push.
       - name: Build and push
         id: build
-        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+        uses: ./.github/actions/docker-build-push-retry
         with:
           context: .
           file: ${{ matrix.image.dockerfile }}
@@ -195,9 +200,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.image.slug }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.image.slug }}
-          provenance: mode=max
-          sbom: true
+          cache-to: type=gha,mode=max,scope=${{ matrix.image.slug }},ignore-error=true
 
       # Cosign keyless signing. Each pushed tag is signed by the workflow's
       # OIDC identity, so consumers can verify the image with the strict,
