@@ -740,10 +740,46 @@ function findExportByName(
   defs: readonly SymbolDefinition[],
   name: string,
 ): SymbolDefinition | undefined {
+  // Languages like TypeScript can emit MULTIPLE `SymbolDefinition`s with
+  // the same simple name from a single declaration: `const fn = () =>
+  // {}` produces both a `Function` def (from `@declaration.function` on
+  // the inner arrow) AND a `Variable` def (from the generic
+  // `@declaration.variable` pattern matching the wrapping
+  // `lexical_declaration`). Both end up in `localDefs`. The CALLER who
+  // writes `import { fn }` wants the callable, not the variable
+  // shadow — without a preference rule, capture order silently decides
+  // which def the import binds to, which broke cross-file CALLS edges
+  // for arrow-typed exports (see `typescript-hof-callbacks.test.ts`).
+  //
+  // Prefer callable / class-like defs; fall back to first-name-match.
+  let fallback: SymbolDefinition | undefined;
   for (const d of defs) {
-    if (deriveSimpleName(d) === name) return d;
+    if (deriveSimpleName(d) !== name) continue;
+    if (isCallableOrTypeLike(d.type)) return d;
+    if (fallback === undefined) fallback = d;
   }
-  return undefined;
+  return fallback;
+}
+
+const CALLABLE_OR_TYPE_LIKE: ReadonlySet<string> = new Set([
+  'Function',
+  'Method',
+  'Constructor',
+  'Class',
+  'Interface',
+  'Enum',
+  'Struct',
+  'Record',
+  'Trait',
+  'Namespace',
+  'Module',
+  'TypeAlias',
+  'Type',
+  'Typedef',
+]);
+
+function isCallableOrTypeLike(type: string): boolean {
+  return CALLABLE_OR_TYPE_LIKE.has(type);
 }
 
 function countEdgesWithin(edgeIndex: Map<string, ImportEdgeDraft[]>, files: Set<string>): number {
