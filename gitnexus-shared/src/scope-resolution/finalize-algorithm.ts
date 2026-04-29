@@ -740,18 +740,30 @@ function findExportByName(
   defs: readonly SymbolDefinition[],
   name: string,
 ): SymbolDefinition | undefined {
-  // Languages like TypeScript can emit MULTIPLE `SymbolDefinition`s with
-  // the same simple name from a single declaration: `const fn = () =>
-  // {}` produces both a `Function` def (from `@declaration.function` on
-  // the inner arrow) AND a `Variable` def (from the generic
-  // `@declaration.variable` pattern matching the wrapping
-  // `lexical_declaration`). Both end up in `localDefs`. The CALLER who
-  // writes `import { fn }` wants the callable, not the variable
-  // shadow — without a preference rule, capture order silently decides
-  // which def the import binds to, which broke cross-file CALLS edges
-  // for arrow-typed exports (see `typescript-hof-callbacks.test.ts`).
+  // GENERIC RULE (applies to every language using this finalize
+  // algorithm): when MULTIPLE `SymbolDefinition`s share the same simple
+  // name in `localDefs`, prefer callable / type-like defs over plain
+  // value defs (`Variable`, `Property`, …). The CALLER side of an
+  // import almost always wants the callable, not a value shadow that
+  // happens to share the name — and without a deterministic
+  // preference, capture order silently decides which def the import
+  // binds to.
   //
-  // Prefer callable / class-like defs; fall back to first-name-match.
+  // The single-def case is unchanged: when only one def has the name,
+  // it's returned regardless of its type (the `fallback` path below).
+  //
+  // TypeScript is the first known language where this matters in
+  // practice: `const fn = () => {}` emits BOTH a `Function` def (from
+  // `@declaration.function` on the inner arrow) AND a `Variable` def
+  // (from the generic `@declaration.variable` pattern matching the
+  // wrapping `lexical_declaration`), and consumers of `import { fn }`
+  // need to bind to the callable. Other migrated languages don't
+  // currently produce dual emits of this shape, so the rule is a no-op
+  // for them today; future languages get the same correctness
+  // guarantee for free if they ever do.
+  //
+  // See `gitnexus/test/integration/resolvers/typescript-hof-callbacks.test.ts`
+  // for the cross-file regression this rule prevents.
   let fallback: SymbolDefinition | undefined;
   for (const d of defs) {
     if (deriveSimpleName(d) !== name) continue;
