@@ -25,10 +25,11 @@ jobs:
     if: needs.check-changes.result == 'success' && needs.check-changes.outputs.web_changed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    env:
-      GITNEXUS_HOME: ${{ runner.temp }}/gitnexus-home
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Configure e2e GitNexus home
+        run: echo "GITNEXUS_HOME=${RUNNER_TEMP}/gitnexus-home" >> "$GITHUB_ENV"
 
       - uses: ./.github/actions/setup-gitnexus-web
 
