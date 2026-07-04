@@ -201,6 +201,8 @@ flowchart TB
 | **Antigravity** (Google) | Yes | Yes    | Yes (AfterTool, [Gemini CLI hooks schema](https://geminicli.com/docs/hooks/reference/))[¹](#fn-antigravity-hooks) | **Full**     |
 | **Codex**                | Yes | Yes    | —                                                                                        | MCP + Skills |
 | **OpenCode**             | Yes | Yes    | —                                                                                        | MCP + Skills |
+| **CodeBuddy** (Tencent)  | Yes | Yes    | —                                                                                        | MCP + Skills |
+| **Qoder** (Alibaba)      | Yes | Yes    | —                                                                                        | MCP + Skills |
 | **Windsurf**             | Yes | —      | —                                                                                        | MCP          |
 
 > **Claude Code** gets the deepest integration: MCP tools + agent skills + PreToolUse hooks that enrich searches with graph context + PostToolUse hooks that detect a stale index after commits and prompt the agent to reindex.
@@ -271,6 +273,32 @@ args = ["-y", "gitnexus@latest", "mcp"]
     "gitnexus": {
       "type": "local",
       "command": ["gitnexus", "mcp"]
+    }
+  }
+}
+```
+
+**CodeBuddy** (Tencent) — priority chain, edit the **first non-empty file that exists**: `~/.codebuddy/.mcp.json` (recommended) → `~/.codebuddy/mcp.json` (deprecated) → `~/.codebuddy.json` (legacy). CodeBuddy reads only the first existing file, so adding servers to a higher-priority file than the one currently in use would hide the servers below it. Create `~/.codebuddy/.mcp.json` only if none exist:
+
+```json
+{
+  "mcpServers": {
+    "gitnexus": {
+      "command": "npx",
+      "args": ["-y", "gitnexus@latest", "mcp"]
+    }
+  }
+}
+```
+
+**Qoder** (Alibaba) — `~/.qoder.json`:
+
+```json
+{
+  "mcpServers": {
+    "gitnexus": {
+      "command": "npx",
+      "args": ["-y", "gitnexus@latest", "mcp"]
     }
   }
 }
