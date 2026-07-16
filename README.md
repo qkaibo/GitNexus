@@ -319,6 +319,15 @@ codex plugin marketplace add abhigyanpatwari/GitNexus
 
 </details>
 
+<details>
+<summary><strong>MCP response budgets</strong></summary>
+
+The `query`, `context`, and `impact` tools accept an optional positive-integer `maxTokens` argument. It bounds the complete formatted MCP response, including hints and error text, using a deterministic four-UTF-8-bytes-per-token estimate. When truncation is required, the response ends with `…` and remains valid UTF-8.
+
+Set `GITNEXUS_MCP_DEFAULT_MAX_TOKENS` to apply the same guardrail when callers do not send `maxTokens`. An explicit tool argument takes precedence. Leaving both unset preserves the existing response byte-for-byte; this is a transport guardrail, not semantic pagination or an exact model-specific tokenizer limit.
+
+</details>
+
 ## CLI Reference
 
 Everyday commands:
@@ -450,6 +459,7 @@ Most `analyze` knobs are also CLI flags (`--workers`, `--worker-timeout`, `--max
 | `GITNEXUS_CHUNK_BYTE_BUDGET`           | `2097152` (2 MB)          | Chunk boundary used for cache-key composition and dispatch. Smaller = finer-grained cache hits but more dispatch overhead.                                 | Tuning incremental-analyze cache behavior on monorepos.                                                                                     |
 | `GITNEXUS_NO_GITIGNORE`                | unset                     | When set, skips `.gitignore` parsing. `.gitnexusignore` is still honored.                                                                                  | Indexing a repo whose `.gitignore` excludes files you actually want indexed (e.g., generated code committed for cross-repo lookup).         |
 | `GITNEXUS_SKIP_OPTIONAL_GRAMMARS`      | unset                     | When `=1` strictly, skips the vendored grammar materialize for `tree-sitter-dart`, `tree-sitter-proto`, `tree-sitter-swift`, and `tree-sitter-kotlin` at install time (and the Dart/Proto source builds). Those four won't be parsed; the install still succeeds. | Installing on a host without a C++ toolchain or where the vendored prebuilds don't match; willing to skip Dart/Proto/Swift/Kotlin parsing. |
+| `GITNEXUS_MCP_DEFAULT_MAX_TOKENS`      | unset                     | Default positive-integer response budget for MCP `query`, `context`, and `impact`, estimated at four UTF-8 bytes per token. Explicit `maxTokens` wins.      | Long MCP responses consume too much model context and callers cannot reliably add a per-request budget.                                    |
 
 </details>
 
