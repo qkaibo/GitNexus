@@ -345,7 +345,6 @@ You can also query the graph directly from the terminal — `gitnexus query`, `c
 
 ```bash
 GITNEXUS_AUTH_TOKEN='replace-me' gitnexus eval-server --host 0.0.0.0
-curl -H 'Authorization: Bearer replace-me' http://127.0.0.1:4848/health
 ```
 
 The token may be set in the shell, `.env.local`, or `.env` in the working directory. Precedence is shell > `.env.local` > `.env`. Only `GITNEXUS_AUTH_TOKEN` is read from those files; their other values are not added to the process environment. Keep token files uncommitted.
