@@ -319,6 +319,15 @@ codex plugin marketplace add abhigyanpatwari/GitNexus
 
 </details>
 
+<details>
+<summary><strong>MCP read-only mode</strong></summary>
+
+Set `GITNEXUS_MCP_READ_ONLY=1` before starting the MCP server to expose only the proven single-repository read surface. Raw `cypher`, rename and group tools, group routing, and group resources are omitted from discovery and rejected before backend dispatch. Tool descriptions and generated setup/context resources are scrubbed so they do not recommend unavailable routes.
+
+The default is unchanged when the variable is unset or `0`. Any other value fails server startup rather than silently weakening the policy.
+
+</details>
+
 ## CLI Reference
 
 Everyday commands:
@@ -450,6 +459,7 @@ Most `analyze` knobs are also CLI flags (`--workers`, `--worker-timeout`, `--max
 | `GITNEXUS_CHUNK_BYTE_BUDGET`           | `2097152` (2 MB)          | Chunk boundary used for cache-key composition and dispatch. Smaller = finer-grained cache hits but more dispatch overhead.                                 | Tuning incremental-analyze cache behavior on monorepos.                                                                                     |
 | `GITNEXUS_NO_GITIGNORE`                | unset                     | When set, skips `.gitignore` parsing. `.gitnexusignore` is still honored.                                                                                  | Indexing a repo whose `.gitignore` excludes files you actually want indexed (e.g., generated code committed for cross-repo lookup).         |
 | `GITNEXUS_SKIP_OPTIONAL_GRAMMARS`      | unset                     | When `=1` strictly, skips the vendored grammar materialize for `tree-sitter-dart`, `tree-sitter-proto`, `tree-sitter-swift`, and `tree-sitter-kotlin` at install time (and the Dart/Proto source builds). Those four won't be parsed; the install still succeeds. | Installing on a host without a C++ toolchain or where the vendored prebuilds don't match; willing to skip Dart/Proto/Swift/Kotlin parsing. |
+| `GITNEXUS_MCP_READ_ONLY`               | unset                     | Set to `1` to expose only proven single-repository read tools and resources; `0` disables the policy and any other value fails startup.      | The MCP server runs in an environment where graph mutation, raw Cypher, and cross-repository group routing must be unavailable.             |
 
 </details>
 
