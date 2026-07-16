@@ -328,6 +328,15 @@ The default is unchanged when the variable is unset or `0`. Any other value fail
 
 </details>
 
+<details>
+<summary><strong>MCP repository policy</strong></summary>
+
+Set `GITNEXUS_MCP_ALLOWED_REPOS` to a comma-separated list of canonical registry names or absolute indexed paths. Entries are trimmed, resolved against the registry, and deduplicated at startup. When exactly one repository is allowed it becomes the implicit default; when several are allowed, callers must select one unless `GITNEXUS_MCP_DEFAULT_REPO` is also set.
+
+The default repository must resolve to an allowed repository. Invalid, ambiguous, blank, or mismatched configuration fails startup before stdio or HTTP begins serving. The allowlist applies to tools, aliases, discovery, resources, templates, implicit resolution, and embedded HTTP; hidden repository details are not included in selection errors. Setting only `GITNEXUS_MCP_DEFAULT_REPO` chooses a default without restricting explicit repository selections. An allowed repository whose name is duplicated in the registry must be configured by path, and its context resource is only served for the unique name form.
+
+</details>
+
 ## CLI Reference
 
 Everyday commands:
@@ -475,6 +484,8 @@ Most `analyze` knobs are also CLI flags (`--workers`, `--worker-timeout`, `--max
 | `GITNEXUS_NO_GITIGNORE`                | unset                     | When set, skips `.gitignore` parsing. `.gitnexusignore` is still honored.                                                                                  | Indexing a repo whose `.gitignore` excludes files you actually want indexed (e.g., generated code committed for cross-repo lookup).         |
 | `GITNEXUS_SKIP_OPTIONAL_GRAMMARS`      | unset                     | When `=1` strictly, skips the vendored grammar materialize for `tree-sitter-dart`, `tree-sitter-proto`, `tree-sitter-swift`, and `tree-sitter-kotlin` at install time (and the Dart/Proto source builds). Those four won't be parsed; the install still succeeds. | Installing on a host without a C++ toolchain or where the vendored prebuilds don't match; willing to skip Dart/Proto/Swift/Kotlin parsing. |
 | `GITNEXUS_MCP_READ_ONLY`               | unset                     | Set to `1` to expose only proven single-repository read tools and resources; `0` disables the policy and any other value fails startup.      | The MCP server runs in an environment where graph mutation, raw Cypher, and cross-repository group routing must be unavailable.             |
+| `GITNEXUS_MCP_ALLOWED_REPOS`           | unset                     | Comma-separated allowlist of canonical indexed repository names or absolute paths. Invalid, ambiguous, or blank entries fail startup.       | One MCP process must expose only a bounded subset of the repositories in the global registry.                                               |
+| `GITNEXUS_MCP_DEFAULT_REPO`            | unset                     | Canonical indexed repository name or absolute path used when a tool or resource omits its repository. Must belong to the allowlist when one is set. | Several repositories are available but unqualified MCP calls should resolve deterministically.                                         |
 
 </details>
 
