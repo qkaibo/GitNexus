@@ -290,10 +290,12 @@ def test_mcp_config_uses_only_the_minimal_pinned_harness_runtime(monkeypatch, tm
         runtime / "dist" / "cli",
         runtime / "node_modules",
         runtime / "vendor",
+        runtime / "hooks" / "claude",
         shared / "dist",
     ):
         directory.mkdir(parents=True)
     (runtime / "dist" / "cli" / "index.js").write_text("")
+    (runtime / "hooks" / "claude" / "resolve-analyze-cmd.cjs").write_text("")
     (runtime / "package.json").write_text(json.dumps({"version": runner.PINNED_GITNEXUS_VERSION}))
     (runtime / "node_modules" / "gitnexus-shared").symlink_to(shared, target_is_directory=True)
     (shared / "package.json").write_text(json.dumps({"name": "gitnexus-shared"}))
@@ -316,6 +318,7 @@ def test_mcp_config_uses_only_the_minimal_pinned_harness_runtime(monkeypatch, tm
         (runtime / "vendor", f"{runner.SANDBOX_GITNEXUS}/vendor"),
         (shared / "dist", f"{runner.SANDBOX_GITNEXUS_SHARED}/dist"),
         (shared / "package.json", f"{runner.SANDBOX_GITNEXUS_SHARED}/package.json"),
+        (runtime / "hooks" / "claude", f"{runner.SANDBOX_GITNEXUS}/hooks/claude"),
     ]
     package = json.loads((runtime / "package.json").read_text())
     assert package["version"] == runner.PINNED_GITNEXUS_VERSION
@@ -329,6 +332,12 @@ def test_mcp_config_uses_only_the_minimal_pinned_harness_runtime(monkeypatch, tm
         assert f"{runner.SANDBOX_GITNEXUS}/{forbidden}" not in mounted_targets
         assert shared / forbidden not in mounted_sources
         assert f"{runner.SANDBOX_GITNEXUS_SHARED}/{forbidden}" not in mounted_targets
+
+    # Only hooks/claude is exposed, not the whole hooks/ directory (which also
+    # has an unrelated hooks/antigravity/ tree) and not the runtime root itself.
+    assert runtime / "hooks" not in mounted_sources
+    assert runtime / "hooks" / "antigravity" not in mounted_sources
+    assert f"{runner.SANDBOX_GITNEXUS}/hooks" not in mounted_targets
 
 
 @pytest.mark.skipif(
@@ -347,6 +356,7 @@ def test_real_bubblewrap_runtime_mount_imports_cli_without_exposing_checkout(tmp
         f"{runner.SANDBOX_GITNEXUS}/vendor",
         f"{runner.SANDBOX_GITNEXUS_SHARED}/dist/index.js",
         f"{runner.SANDBOX_GITNEXUS_SHARED}/package.json",
+        f"{runner.SANDBOX_GITNEXUS}/hooks/claude/resolve-analyze-cmd.cjs",
     ]
     forbidden = [
         f"{runner.SANDBOX_GITNEXUS}/{relative}"
@@ -376,9 +386,19 @@ def test_real_bubblewrap_runtime_mount_imports_cli_without_exposing_checkout(tmp
             ["/usr/local/bin/node", runner.SANDBOX_GITNEXUS_ENTRYPOINT, "--version"],
             timeout=10,
         )
+        # --version never reaches the `analyze` command, which is loaded via a
+        # lazy dynamic import and is the only path that pulls in
+        # resolve-invocation.ts's module-load-time require of hooks/claude/
+        # resolve-analyze-cmd.cjs. Require the compiled analyze module
+        # directly so this canary actually exercises that chain.
+        analyze_imported = sandbox.run(
+            ["/usr/local/bin/node", "-e", f"require('{runner.SANDBOX_GITNEXUS}/dist/cli/analyze.js')"],
+            timeout=10,
+        )
 
     assert visibility.ok, visibility.stderr_tail
     assert imported.ok, imported.stderr_tail
+    assert analyze_imported.ok, analyze_imported.stderr_tail
     assert imported.stdout_tail.strip() == runner.PINNED_GITNEXUS_VERSION
 
 
