@@ -32,6 +32,7 @@ import {
   ormPhase,
   crossFilePhase,
   scopeResolutionPhase,
+  rustScopeResolutionPhase,
   springConfigPhase,
   springAutoConfigurationPhase,
   springAopPhase,
@@ -298,7 +299,7 @@ export function buildPhaseList(options?: PipelineOptions): PipelinePhase[] {
       .register(toolsPhase)
       .register(ormPhase)
       .register(crossFilePhase)
-      .register(scopeResolutionPhase)
+      .register(rustScopeResolutionPhase)
       .register(springAutoConfigurationPhase)
       .register(springAopPhase)
       .register(pruneLocalSymbolsPhase)

@@ -641,14 +641,33 @@ export const loadDurableParsedFileIndex = async (
   durableDir: string,
   expectedVersion: string,
 ): Promise<Set<string>> => {
+  const keys = new Set<string>();
   try {
     const raw = await fs.readFile(path.join(durableDir, DURABLE_INDEX_FILENAME), 'utf-8');
     const idx = JSON.parse(raw) as DurableParsedFileIndex;
-    if (idx?.version !== expectedVersion || !Array.isArray(idx.keys)) return new Set();
-    return new Set(idx.keys);
+    if (idx?.version === expectedVersion && Array.isArray(idx.keys)) {
+      for (const k of idx.keys) if (typeof k === 'string') keys.add(k);
+    }
   } catch {
-    return new Set();
+    // ⚠️ ts 补丁(2026-08-27): index 缺失(崩溃在 save 前) —— 子目录扫描补全(下)
   }
+  // ⚠️ ts 补丁(2026-08-27): 大库崩溃恢复 —— durable index 最后原子写,
+  // 中途崩(大库常见: 1h parse 后 scopeResolution 异常) index 缺失但子目录
+  // (shard)全在 → 只认 index = 空 = durableHit=false → 命中被否决 → 全量
+  // 白跑。内容寻址 + version 门控(index 匹配时子目录全为当前 version) →
+  // 扫描目录补全, 崩溃后重启 parse 秒级恢复。只认 64-hex 子目录名
+  // (chunkHash), 跳过 index 文件(只做加法, 不删减)。
+  try {
+    const entries = await fs.readdir(durableDir);
+    for (const n of entries) {
+      if (n !== DURABLE_INDEX_FILENAME && /^[0-9a-f]{64}$/.test(n)) {
+        keys.add(n);
+      }
+    }
+  } catch {
+    // no durable dir yet — keys stand
+  }
+  return keys;
 };
 
 /**

@@ -961,7 +961,10 @@ const loadShardedParseCache = async (storagePath: string): Promise<ParseCache | 
       data.version !== PARSE_CACHE_VERSION ||
       !Array.isArray(data.keys)
     ) {
-      return emptyCache(storagePath);
+      // ⚠️ ts 补丁(2026-08-27): version 不匹配/结构异常 —— 旧 shard 内容
+      // 寻址(同 hash 同内容), 认了无害(不匹配即 miss); 当前轮写的 shard
+      // hash 与下轮相同 → 命中。不再空缓存(空 = 全量白跑)。
+      return withScannedShards(storagePath, new Set());
     }
 
     const onDiskKeys = new Set<string>();
@@ -972,16 +975,49 @@ const loadShardedParseCache = async (storagePath: string): Promise<ParseCache | 
     }
 
     // Lazy: index only — load individual shards on cache hit (#1983).
-    return {
-      version: PARSE_CACHE_VERSION,
-      entries: new Map<string, ParseWorkerResult[]>(),
-      usedKeys: new Set<string>(),
-      storagePath,
-      onDiskKeys,
-    };
+    // ⚠️ ts 补丁: 扫描目录补全 onDiskKeys(崩溃恢复, 见 withScannedShards)。
+    return withScannedShards(storagePath, onDiskKeys);
   } catch {
-    return null;
+    // ⚠️ ts 补丁(2026-08-27): index 缺失(崩溃在 save 前) —— 扫描目录补全,
+    // 崩溃后重启 parse 秒级恢复。原返回 null(走 legacy/空缓存 = 全量白跑)。
+    return withScannedShards(storagePath, new Set());
   }
+};
+
+/**
+ * ⚠️ ts 补丁(2026-08-27): 大库崩溃恢复 —— shard 边 parse 边写, index 最后
+ * 原子写。中途崩(大库常见: 1h parse 后 scopeResolution 异常) index 缺本次
+ * chunk 或无 index, 但 shard 全在 → 只认 index = 全 miss = 全量白跑。
+ * 把目录里存在的 shard 补进 onDiskKeys(内容寻址: 同 hash 同内容, 旧 shard
+ * 不匹配即 miss 无害; version 门控由 index 承担, 目录扫描只做加法)。
+ * 与 parsedfile-store.ts 的 loadDurableParsedFileIndex 目录扫描配套:
+ * parse 命中需 BOTH parse-cache shard 和 durable shard(双条件)。
+ */
+const withScannedShards = async (
+  storagePath: string,
+  baseKeys: Set<string>,
+): Promise<ParseCache> => {
+  const onDiskKeys = baseKeys;
+  try {
+    const shardNames = await fs.readdir(getCacheDirPath(storagePath));
+    for (const n of shardNames) {
+      if (n.endsWith('.json') && n !== CACHE_INDEX_FILENAME) {
+        const h = n.slice(0, -5);
+        if (isValidChunkCacheKey(h)) {
+          onDiskKeys.add(h);
+        }
+      }
+    }
+  } catch {
+    // no shard dir yet — base keys stand
+  }
+  return {
+    version: PARSE_CACHE_VERSION,
+    entries: new Map<string, ParseWorkerResult[]>(),
+    usedKeys: new Set<string>(),
+    storagePath,
+    onDiskKeys,
+  };
 };
 
 /**

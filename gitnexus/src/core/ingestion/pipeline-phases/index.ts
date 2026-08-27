@@ -20,6 +20,7 @@ export {
   scopeResolutionPhase,
   type ScopeResolutionOutput,
 } from '../scope-resolution/pipeline/phase.js';
+export { rustScopeResolutionPhase } from './rust-scope-phase.js';
 export { springConfigPhase, type SpringConfigOutput } from './spring-config.js';
 export {
   springAutoConfigurationPhase,

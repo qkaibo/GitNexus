@@ -1907,7 +1907,13 @@ async function runFullAnalysisInner(
     currentAnalysisFeatureMismatches.length === 0 &&
     !!existingMeta.fileHashes &&
     Object.keys(existingMeta.fileHashes).length > 0 &&
-    repoHasGit &&
+    // ⚠️ ts 补丁(2026-08-27): 放宽 repoHasGit 硬条件 —— 非 git 大项目
+    // (repo 多 git 根无 .git / 分发拷贝无 .git) 官方增量被整体禁用, 每轮
+    // 全量重算。per-file hash-diff 机制本身 git 无关(meta.fileHashes 无条件
+    // 保存, computeFileHashes 纯读文件)——去掉 repoHasGit 后, 非 git 仓库
+    // 也能"改啥算啥"(changed/added/deleted 文件级增量)。可靠前提: hash-diff
+    // 是内容寻址(同内容同 hash), walk 全量扫描(1.3s/17 万文件)保证文件集合
+    // 完整; 忽略规则变化导致的集合漂移由 schemaFingerprint gate 兜底。
     allFilePaths.length > 0;
 
   const hashDiff = isIncremental
