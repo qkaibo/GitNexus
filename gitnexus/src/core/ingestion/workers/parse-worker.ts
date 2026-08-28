@@ -150,6 +150,31 @@ import {
 } from '../language-provider.js';
 import type { ParsedFile } from 'gitnexus-shared';
 import { extractParsedFile, type ScopeCaptureSourceKind } from '../scope-extractor-bridge.js';
+// #OOM-FIX: Rust parseFileJson 替代 JS extractParsedFile（方案 A）。
+// JS extractParsedFile 在 worker 内构建完整语义模型（scopes/defs/sites）并随 chunk
+// 序列化在 V8 heap 累积——大库单 worker 可达 23GB（OOM 根因，rust12.log）。
+// Rust parse_native 直接产 ParsedFile JSON（scopes/localDefs/referenceSites/
+// parsedImports + callableFlowSites），无 JS 语义模型累积。
+import { createRequire } from 'node:module';
+const workerRequire = createRequire(import.meta.url);
+let rustNative: { parseFileJson: (lang: string, path: string, content: string) => string } | null = null;
+function getRustNative() {
+  if (rustNative) return rustNative;
+  const candidates = [
+    process.env.PARSE_NATIVE_NODE,
+    new URL('./parse_native.node', import.meta.url).pathname,
+    '/home/ts/rustify/parse_native/parse_native.node',
+  ].filter(Boolean) as string[];
+  for (const c of candidates) {
+    try {
+      rustNative = workerRequire(c);
+      return rustNative;
+    } catch {
+      // try next
+    }
+  }
+  throw new Error('parse_native.node not found (set PARSE_NATIVE_NODE)');
+}
 import {
   persistParsedFileShardSync,
   persistDurableParsedFileShardSync,
@@ -1587,14 +1612,16 @@ const processFileGroup = (
     // see parsedfile-store.ts). parse-impl flushes `result.parsedFiles` to disk
     // per chunk and does NOT retain them in main-thread heap, so this no longer
     // costs ~1× the semantic model in RAM during parse.
-    const parsedFile = extractParsedFile(
-      provider,
-      parseContent,
-      file.path,
-      reportWarning,
-      tree,
-      scopeSourceKind,
-    );
+    // #OOM-FIX: Rust parseFileJson（方案 A）——直接产 ParsedFile JSON，无 JS 语义模型累积。
+    // 注意：captureSideChannel（C static 链接名 / C++ ADL 标记）依赖 JS emitScopeCaptures
+    // 的 module-maps 副作用；Rust 路径不跑 → side channel 为空（小库对拍验证影响，必要时 Rust 补）。
+    // scopeSourceKind（full-file / pre-extracted-script）Rust 无此参数——Vue 嵌入脚本场景后修。
+    const rustJson = getRustNative().parseFileJson(language, file.path, parseContent);
+    const rustParsed: unknown = JSON.parse(rustJson);
+    const parsedFile: ReturnType<typeof extractParsedFile> =
+      rustParsed !== null && typeof rustParsed === 'object' && Object.keys(rustParsed).length > 0
+        ? (rustParsed as ReturnType<typeof extractParsedFile>)
+        : undefined;
     if (parsedFile !== undefined) {
       // Capture-time side-channel (#1983): `extractParsedFile` just ran the
       // provider's `emitScopeCaptures`, which (for C++ ADL/namespace marks,

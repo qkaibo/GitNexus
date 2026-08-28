@@ -253,6 +253,13 @@ export const rustScopeResolutionPhase: PipelinePhase<unknown> = {
       }
       lookupMap = subset;
       if (process.env.GITNEXUS_VERBOSE) {
+        // debug: Rust 返回的边类型分布(对比原生找差距根因)
+        const tdist: Record<string, number> = {};
+        for (const r of relsRaw) {
+          const t = String((r as { type?: string }).type ?? '?');
+          tdist[t] = (tdist[t] ?? 0) + 1;
+        }
+        console.error(`[rust-phase] Rust 边类型分布(${relsRaw.length}): ${JSON.stringify(tdist)}`);
         console.error(
           `[rust-phase] 子集 lookup: epKeys=${epKeys.size} 节点子集=${subset.size} 边=${relsRaw.length} (debug: 端点样例见下)`,
         );
