@@ -28,7 +28,7 @@ function getNative(): any {
   const candidates = [
     process.env.PARSE_NATIVE_NODE,
     new URL('./parse_native.node', import.meta.url).pathname,
-    '/home/ts/rustify/parse_native/parse_native.node',
+    '/home/ts/RustNexus/parse_native/parse_native.node',
   ].filter(Boolean);
   for (const c of candidates) {
     try {
