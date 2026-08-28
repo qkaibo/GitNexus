@@ -160,13 +160,10 @@ export const rustScopeResolutionPhase: PipelinePhase<unknown> = {
   deps: ['parse', 'crossFile', 'structure'],
   async execute(ctx: PipelineContext, deps: ReadonlyMap<string, PhaseResult<unknown>>) {
     const parsedFiles = collectParsedFiles(deps);
-    const durableMap = await loadDurableParsedFiles(ctx.options?.parseCache?.storagePath);
-    const files = parsedFiles.map((pf) => {
-      const full = durableMap.get(pf.filePath);
-      return full
-        ? { filePath: pf.filePath, parsedFile: full }
-        : { filePath: pf.filePath };
-    });
+    // 大库直出(2026-08-28): 不加载 durable ParsedFile——10 万文件 full JSON
+    // (含 content) 读回 JS 主进程 ≈20GB 必 OOM(run3 撞 23.5GB cap 实证)。
+    // 只传 filePath, Rust 按 repoPath+filePath 重读(1.6.9 时代机制, ~1h 无 OOM)。
+    const files = parsedFiles.map((pf) => ({ filePath: pf.filePath }));
     if (process.env.GITNEXUS_VERBOSE) {
       const pf0 = parsedFiles[0] as unknown as Record<string, unknown> | undefined;
       console.error(
