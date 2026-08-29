@@ -3,7 +3,9 @@ import { DEFAULT_MAX_FILE_SIZE_BYTES, getMaxFileSizeBytes } from './utils/max-fi
 import fs from 'fs/promises';
 import path from 'path';
 import { glob } from 'glob';
-import { createIgnoreFilter } from '../../config/ignore-service.js';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+import { createIgnoreFilter, getHardcodedRules, getIgnoreRuleContents } from '../../config/ignore-service.js';
 import { mapConcurrent } from '../../lib/utils.js';
 
 import { logger } from '../logger.js';
@@ -65,6 +67,9 @@ export const walkRepositoryPaths = async (
   repoPath: string,
   onProgress?: (current: number, total: number, filePath: string) => void,
 ): Promise<ScannedFile[]> => {
+  if (process.env.GITNEXUS_WALKER_RUST === '1') {
+    return walkRepositoryPathsRust(repoPath, onProgress);
+  }
   const ignoreFilter = await createIgnoreFilter(repoPath);
   const maxFileSizeBytes = getMaxFileSizeBytes();
 
@@ -153,6 +158,73 @@ export const walkRepositoryPaths = async (
 
   return deduplicatedEntries;
 };
+
+/**
+ * Phase 1 (Rust 分支): GITNEXUS_WALKER_RUST=1 时用 parse_native.node 的
+ * walk_files(Rust ignore crate, 多线程+目录剪枝)替换 JS glob 单线程扫描。
+ * 返回结构与 JS 版一致: [{path, size}]。大文件过滤/提示逻辑与 JS 版相同。
+ */
+const walkRepositoryPathsRust = async (
+  repoPath: string,
+  onProgress?: (current: number, total: number, filePath: string) => void,
+): Promise<ScannedFile[]> => {
+  const native = getNativeWalker();
+  const hardcoded = getHardcodedRules();
+  const customContents = await getIgnoreRuleContents(repoPath);
+  const customLines: string[] = [];
+  for (const content of customContents) {
+    customLines.push(...content.split('\n'));
+  }
+  const raw: string = native.walkFiles(repoPath, hardcoded, customLines);
+  const entries = JSON.parse(raw);
+  if (entries.error) {
+    throw new Error(`[walker] Rust walk failed: ${entries.error}`);
+  }
+  const maxFileSizeBytes = getMaxFileSizeBytes();
+  const skippedLarge: string[] = [];
+  const result: ScannedFile[] = [];
+  let processed = 0;
+  for (const e of entries) {
+    processed++;
+    if (e.size > maxFileSizeBytes) {
+      skippedLarge.push(e.path);
+      onProgress?.(processed, entries.length, e.path);
+      continue;
+    }
+    result.push(e);
+    onProgress?.(processed, entries.length, e.path);
+  }
+  if (skippedLarge.length > 0) {
+    warnLargeFileSkip(`  Skipped ${skippedLarge.length} large files (>${maxFileSizeBytes / 1024}KB)`);
+    const preview = skippedLarge.slice(0, 5).sort();
+    for (const p of preview) {
+      warnLargeFileSkip(`  - ${p}`);
+    }
+    if (skippedLarge.length > 5) {
+      warnLargeFileSkip(`  ...and ${skippedLarge.length - 5} more (set GITNEXUS_VERBOSE=1 to list them all)`);
+    }
+  }
+  return result;
+};
+
+let nativeWalker: { walkFiles: (root: string, hardcoded: string[], custom: string[]) => string } | null = null;
+function getNativeWalker(): { walkFiles: (root: string, hardcoded: string[], custom: string[]) => string } {
+  if (nativeWalker) return nativeWalker;
+  const candidates = [
+    process.env.PARSE_NATIVE_NODE,
+    new URL('./parse_native.node', import.meta.url).pathname,
+    '/home/ts/RustNexus/parse_native/parse_native.node',
+  ].filter(Boolean) as string[];
+  for (const c of candidates) {
+    try {
+      nativeWalker = require(c) as { walkFiles: (root: string, hardcoded: string[], custom: string[]) => string };
+      return nativeWalker;
+    } catch (e) {
+      // try next
+    }
+  }
+  throw new Error('parse_native.node not found (set PARSE_NATIVE_NODE) for GITNEXUS_WALKER_RUST=1');
+}
 
 /**
  * Phase 2: Read file contents for a specific set of relative paths.

@@ -561,3 +561,48 @@ export const createIgnoreFilter = async (repoPath: string, options?: IgnoreOptio
     },
   };
 };
+
+// ── Rust walker 规则导出（2026-08-29 移植自 1.6.9 补丁，GITNEXUS_WALKER_RUST=1 用）──
+export const getHardcodedRules = (): string[] => {
+  const rules: string[] = [];
+  for (const name of DEFAULT_IGNORE_LIST) {
+    rules.push(`${name}/`);
+  }
+  for (const name of IGNORED_FILES) {
+    rules.push(name);
+  }
+  for (const ext of IGNORED_EXTENSIONS) {
+    if (ext.startsWith('.')) {
+      rules.push(`*${ext}`);
+    }
+  }
+  // shouldIgnorePath 特殊正则 → gitignore 等价行
+  rules.push('**/storage/framework/views/**');
+  rules.push('*.bundle.*');
+  rules.push('*.chunk.*');
+  rules.push('*.generated.*');
+  rules.push('*.d.ts');
+  return rules;
+};
+
+// 读取 .gitignore + .gitnexusignore 原文(按加载顺序), 供 Rust walker 解析。
+export const getIgnoreRuleContents = async (
+  repoPath: string,
+  options?: IgnoreOptions,
+): Promise<string[]> => {
+  const skipGitignore = options?.noGitignore ?? !!process.env.GITNEXUS_NO_GITIGNORE;
+  const filenames = skipGitignore ? ['.gitnexusignore'] : ['.gitignore', '.gitnexusignore'];
+  const contents: string[] = [];
+  for (const filename of filenames) {
+    try {
+      const content = await fs.readFile(nodePath.join(repoPath, filename), 'utf-8');
+      contents.push(content);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== 'ENOENT') {
+        logger.warn(`  Warning: could not read ${filename}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+  }
+  return contents;
+};
