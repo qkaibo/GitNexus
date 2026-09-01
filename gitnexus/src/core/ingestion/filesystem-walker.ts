@@ -67,7 +67,8 @@ export const walkRepositoryPaths = async (
   repoPath: string,
   onProgress?: (current: number, total: number, filePath: string) => void,
 ): Promise<ScannedFile[]> => {
-  if (process.env.GITNEXUS_WALKER_RUST === '1') {
+  // 默认 Rust 快扫(2026-09-01 用户拍板: 默认Rust, JS 仅对拍)。GITNEXUS_WALKER_RUST=0 显式退回 JS glob。
+  if (process.env.GITNEXUS_WALKER_RUST !== '0') {
     return walkRepositoryPathsRust(repoPath, onProgress);
   }
   const ignoreFilter = await createIgnoreFilter(repoPath);
