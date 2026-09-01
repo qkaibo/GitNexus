@@ -34,4 +34,8 @@ for row in $LANGS; do
 done
 
 echo "=== [stage2] B 段: 收尾 $(date '+%F %T') ==="
+# R1-⑧补(ADR-029): B 段灌库走 CSV→COPY, 量大(全库 ~5G+)。缓冲池上限默认
+# 2G(DEFAULT_BUFFER_POOL_CAP), hint 只会缩不会涨 → 大库必撞 "buffer pool is
+# full" (lv3e 实录 01:27)。给 8G, B 段单独进程, 机器 31G 装得下。
+export GITNEXUS_LBUG_BUFFER_POOL_SIZE=${GITNEXUS_LBUG_BUFFER_POOL_SIZE:-8589934592}
 GITNEXUS_SCOPE_STAGE2=1 "$NODE" "$CLI" analyze "$REPO" --skip-git
