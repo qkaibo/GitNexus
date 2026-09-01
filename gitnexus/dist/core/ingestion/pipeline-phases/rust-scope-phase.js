@@ -182,10 +182,11 @@ export const rustScopeResolutionPhase = {
         }
         const n = getNative();
         const t0 = performance.now();
-        // ⚠️ 方案 B+子集: config 只传 repoPath(不传 nodeLookup——省 4.5GB + 传输)。
-        // Rust 自建 lookup 内部对齐, 边端点=def id 输出; 合并段查本进程子集 Map。
-        // ADR-029 R0: scopeCacheBudgetBytes 必须显式喂(此前恒回落默认1.5G→大库LRU换页放大RSS→27G OOM)
-        const result = n.analyzeFiles(files, {
+        // R1-⑦(ADR-029 两阶段): GITNEXUS_SCOPE_STAGE2=1 → 不调 Rust(子进程已把
+        // 边落 CSV), 直接读回 CSV 合并。主进程只干轻活(读 CSV ~1G 级),
+        // 脚下没有 13.8G JS 图垫底问题——13.8G 图在这里才第一次出现。
+        const stage2 = process.env.GITNEXUS_SCOPE_STAGE2 === '1';
+        let result = stage2 ? null : n.analyzeFiles(files, {
             repoPath: ctx.repoPath ?? '',
             scopeCacheBudgetBytes: 8 * 1024 * 1024 * 1024,
         });
@@ -193,10 +194,16 @@ export const rustScopeResolutionPhase = {
         const repoPath = ctx.repoPath ?? '';
         // R1(ADR-029): Rust 边已直写 CSV(relationships 恒空), 此处从 csvDir 读回
         // rel 行(def id), 逐行解析, 对账 totalRels fail-fast。
-        const csvDir = result?.csvDir ?? '';
-        const rustTotal = result?.totalRels ?? 0;
+        // stage2: Rust 没跑 → csvDir 由环境变量指定(子进程写死的目录)。
+        let csvDir = result?.csvDir ?? '';
+        let rustTotal = result?.totalRels ?? 0;
+        if (stage2) {
+            csvDir = process.env.GITNEXUS_SCOPE_CSV_DIR
+                ?? `${(ctx.repoPath ?? '').replace(/\/+$/, '')}/.gitnexus/graph-csv-rust`;
+            rustTotal = -1; // -1 = 无对账基准(子进程 manifest 各自落盘后合并)
+        }
         const relsRaw = [];
-        if (csvDir && rustTotal > 0) {
+        if (csvDir) {
             try {
                 const fsp = await import('fs');
                 const pathMod = await import('path');
@@ -226,9 +233,10 @@ export const rustScopeResolutionPhase = {
             } catch (csvErr) {
                 console.error(`[rust-phase] R1 CSV 读回失败: ${csvErr.message}`);
             }
-            if (relsRaw.length !== rustTotal) {
+            if (rustTotal >= 0 && relsRaw.length !== rustTotal) {
                 throw new Error(`R1 对账失败: CSV 读回 ${relsRaw.length} != Rust totalRels ${rustTotal} (dir=${csvDir})`);
             }
+            console.error(`[rust-phase] R1 CSV 读回 ${relsRaw.length} 边 (dir=${csvDir}${stage2 ? ', stage2' : ''})`);
         }
         // ── 子集 lookup: 边端点(def id)驱动的 key 集合 → 图节点命中子集 ──
         try {
