@@ -185,7 +185,12 @@ export const rustScopeResolutionPhase: PipelinePhase<unknown> = {
     const t0 = performance.now();
     // ⚠️ 方案 B+子集: config 只传 repoPath(不传 nodeLookup——省 4.5GB + 传输)。
     // Rust 自建 lookup 内部对齐, 边端点=def id 输出; 合并段查本进程子集 Map。
-    const result = n.analyzeFiles(files, { repoPath: ctx.repoPath ?? '' });
+    // ADR-029 R0: scopeCacheBudgetBytes 必须显式喂(此前 config-budget raw=None 恒回落默认1.5G,
+    // 大库 LRU 频繁换页放大 RSS→27G OOM)。8G = 单机 31G 实测安全值。
+    const result = n.analyzeFiles(files, {
+      repoPath: ctx.repoPath ?? '',
+      scopeCacheBudgetBytes: 8 * 1024 * 1024 * 1024,
+    });
     const elapsed = (performance.now() - t0).toFixed(1);
     const repoPath = ctx.repoPath ?? '';
     const relsRaw: Array<{ id?: string; sourceId?: string; targetId?: string; [k: string]: unknown }> =
