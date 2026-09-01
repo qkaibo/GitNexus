@@ -193,8 +193,45 @@ export const rustScopeResolutionPhase: PipelinePhase<unknown> = {
     });
     const elapsed = (performance.now() - t0).toFixed(1);
     const repoPath = ctx.repoPath ?? '';
-    const relsRaw: Array<{ id?: string; sourceId?: string; targetId?: string; [k: string]: unknown }> =
-      result?.relationships ?? [];
+    // R1(ADR-029): Rust 侧边已直写 CSV(relationshps 恒空), 此处从 csvDir 流式
+    // 读回 rel 行(def id), 逐行解析→逐行合并, 不攒大数组。
+    const csvDir: string = result?.csvDir ?? '';
+    const rustTotal: number = result?.totalRels ?? 0;
+    const relsRaw: Array<{ id?: string; sourceId?: string; targetId?: string; [k: string]: unknown }> = [];
+    if (csvDir && rustTotal > 0) {
+      try {
+        const fsp = await import('fs');
+        const pathMod = await import('path');
+        const files = fsp.readdirSync(csvDir).filter((f) => f.startsWith('rel-') && f.endsWith('.csv')).sort();
+        for (const fname of files) {
+          const text = fsp.readFileSync(pathMod.join(csvDir, fname), 'utf-8');
+          const lines = text.split('\n');
+          for (let i = 1; i < lines.length; i++) {
+            const line = lines[i];
+            if (!line.trim()) continue;
+            // 行格式: "src","tgt","TYPE",conf,"reason",step(escape_csv_field 全加引号)
+            const m = line.match(/^"((?:[^"]|"")*)","((?:[^"]|"")*)","((?:[^"]|"")*)",([^,]*),"((?:[^"]|"")*)",(.*)$/);
+            if (!m) continue;
+            const unq = (s: string) => s.replace(/""/g, '"');
+            relsRaw.push({
+              sourceId: unq(m[1]),
+              targetId: unq(m[2]),
+              type: unq(m[3]),
+              confidence: m[4] === '' ? 1 : Number(m[4]),
+              reason: unq(m[5]),
+              step: m[6] === '' || m[6] === '0' ? 0 : Number(m[6]),
+            });
+          }
+        }
+      } catch (csvErr) {
+        console.error(`[rust-phase] R1 CSV 读回失败: ${(csvErr as Error).message}`);
+      }
+      if (relsRaw.length !== rustTotal) {
+        throw new Error(
+          `R1 对账失败: CSV 读回 ${relsRaw.length} != Rust totalRels ${rustTotal} (dir=${csvDir})`,
+        );
+      }
+    }
 
     // ── 子集 lookup: 边端点(def id)驱动的 key 集合 → 图节点命中子集 ──
     try {
