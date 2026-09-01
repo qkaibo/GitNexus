@@ -66,8 +66,21 @@ export class PhaseRegistry<TOptions = unknown> {
    * predicates never see `undefined`.
    */
   build(options: TOptions): PipelinePhase[] {
-    return this.registrations
-      .filter((r) => r.enabledWhen === undefined || r.enabledWhen(options))
-      .map((r) => r.phase);
+    // R1-⑧(ADR-029): 先按 enabledWhen 淘汰, 再级联移除"依赖了被淘汰相位"
+    // 的相位(传递闭包)——否则 topologicalSort 撞死 'dep not registered'。
+    // 语义: 关掉 X = 连锁关掉所有硬依赖 X 的相位。enabledWhen 原语义不变。
+    const alive = this.registrations.filter(
+      (r) => r.enabledWhen === undefined || r.enabledWhen(options),
+    );
+    for (;;) {
+      const names = new Set(alive.map((r) => r.phase.name));
+      const dead = alive.filter((r) => r.phase.deps.some((d) => !names.has(d)));
+      if (dead.length === 0) break;
+      for (const r of dead) {
+        const ix = alive.indexOf(r);
+        if (ix >= 0) alive.splice(ix, 1);
+      }
+    }
+    return alive.map((r) => r.phase);
   }
 }

@@ -382,7 +382,10 @@ export const runPipelineFromRepo = async (
 
   let communityResult: CommunitiesOutput['communityResult'] | undefined;
   let processResult: ProcessesOutput['processResult'] | undefined;
-  const scopeResolutionOutput = getPhaseOutput<ScopeResolutionOutput>(results, 'scopeResolution');
+  // R1-⑧: PARSE_ONLY 门下 scopeResolution 相位被裁掉 → 无输出可取。
+  const scopeResolutionOutput = results.has('scopeResolution')
+    ? getPhaseOutput<ScopeResolutionOutput>(results, 'scopeResolution')
+    : ({} as Partial<ScopeResolutionOutput>);
   const resolutionOutcomes = scopeResolutionOutput.resolutionOutcomes;
   const undecidedSatisfaction = scopeResolutionOutput.undecidedSatisfaction;
   // Streamed PDG-emit manifest (#2202): present only when streaming was on.
