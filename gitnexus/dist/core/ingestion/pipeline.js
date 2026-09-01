@@ -116,7 +116,11 @@ export const runPipelineFromRepo = async (repoPath, onProgress, options) => {
     const { totalFiles, usedWorkerPool } = getPhaseOutput(results, 'parse');
     let communityResult;
     let processResult;
-    const scopeResolutionOutput = getPhaseOutput(results, 'scopeResolution');
+    // R1-⑧: PARSE_ONLY 门下 scopeResolution 相位被裁掉 → 无输出可取。
+    // A 段只产 parse 产物(JS 图+parsedfile-store), 结果契约字段留空。
+    const scopeResolutionOutput = results.has('scopeResolution')
+        ? getPhaseOutput(results, 'scopeResolution')
+        : { resolutionOutcomes: undefined, undecidedSatisfaction: undefined, pdgEmitManifest: undefined, propertyInference: undefined };
     const resolutionOutcomes = scopeResolutionOutput.resolutionOutcomes;
     const undecidedSatisfaction = scopeResolutionOutput.undecidedSatisfaction;
     // Streamed PDG-emit manifest (#2202): present only when streaming was on.
