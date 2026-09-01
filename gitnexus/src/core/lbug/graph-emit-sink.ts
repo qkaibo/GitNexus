@@ -366,6 +366,9 @@ export class GraphEmitSink implements KnowledgeGraph, GraphEmitControl {
    * unrecognized shape is stored exactly, just without the saving.
    */
   private dedupKey(rel: GraphRelationship, srcIx: number, tgtIx: number): string {
+    // R1-②: stage2 合并段恢复的边 id 可能缺(id=undefined, 端点已内联)——
+    // 此前 rel.id.lastIndexOf 直接 TypeError 炸 phase。缺 id → 退索引键。
+    if (rel.id == null) return `${srcIx}|${tgtIx}|${rel.type}`;
     const afterTarget = rel.id.lastIndexOf(rel.targetId);
     if (afterTarget >= 0) {
       const tail = rel.id.slice(afterTarget + rel.targetId.length);

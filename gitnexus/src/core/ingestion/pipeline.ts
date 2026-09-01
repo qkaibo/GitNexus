@@ -299,7 +299,11 @@ export function buildPhaseList(options?: PipelineOptions): PipelinePhase[] {
       .register(toolsPhase)
       .register(ormPhase)
       .register(crossFilePhase)
-      .register(rustScopeResolutionPhase)
+      // R1-⑧(ADR-029 两阶段): GITNEXUS_PARSE_ONLY=1 → A 段只跑到 parse,
+      // 跳过 rustScope(独立子进程跑)与 graph 分析相位。
+      .register(rustScopeResolutionPhase, {
+        enabledWhen: (o) => process.env.GITNEXUS_PARSE_ONLY !== '1',
+      })
       .register(springAutoConfigurationPhase)
       .register(springAopPhase)
       .register(pruneLocalSymbolsPhase)
