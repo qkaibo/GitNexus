@@ -191,7 +191,45 @@ export const rustScopeResolutionPhase = {
         });
         const elapsed = (performance.now() - t0).toFixed(1);
         const repoPath = ctx.repoPath ?? '';
-        const relsRaw = result?.relationships ?? [];
+        // R1(ADR-029): Rust 边已直写 CSV(relationships 恒空), 此处从 csvDir 读回
+        // rel 行(def id), 逐行解析, 对账 totalRels fail-fast。
+        const csvDir = result?.csvDir ?? '';
+        const rustTotal = result?.totalRels ?? 0;
+        const relsRaw = [];
+        if (csvDir && rustTotal > 0) {
+            try {
+                const fsp = await import('fs');
+                const pathMod = await import('path');
+                const files = fsp
+                    .readdirSync(csvDir)
+                    .filter((f) => f.startsWith('rel-') && f.endsWith('.csv'))
+                    .sort();
+                for (const fname of files) {
+                    const text = fsp.readFileSync(pathMod.join(csvDir, fname), 'utf-8');
+                    const lines = text.split('\n');
+                    for (let i = 1; i < lines.length; i++) {
+                        const line = lines[i];
+                        if (!line.trim()) continue;
+                        const m = line.match(/^"((?:[^"]|"")*)","((?:[^"]|"")*)","((?:[^"]|"")*)",([^,]*),"((?:[^"]|"")*)",(.*)$/);
+                        if (!m) continue;
+                        const unq = (s) => s.replace(/""/g, '"');
+                        relsRaw.push({
+                            sourceId: unq(m[1]),
+                            targetId: unq(m[2]),
+                            type: unq(m[3]),
+                            confidence: m[4] === '' ? 1 : Number(m[4]),
+                            reason: unq(m[5]),
+                            step: m[6] === '' || m[6] === '0' ? 0 : Number(m[6]),
+                        });
+                    }
+                }
+            } catch (csvErr) {
+                console.error(`[rust-phase] R1 CSV 读回失败: ${csvErr.message}`);
+            }
+            if (relsRaw.length !== rustTotal) {
+                throw new Error(`R1 对账失败: CSV 读回 ${relsRaw.length} != Rust totalRels ${rustTotal} (dir=${csvDir})`);
+            }
+        }
         // ── 子集 lookup: 边端点(def id)驱动的 key 集合 → 图节点命中子集 ──
         try {
             const { qualifiedKey } = await import('../scope-resolution/graph-bridge/node-lookup.js');
