@@ -11,6 +11,7 @@
  */
 
 import fs from 'fs/promises';
+import nodeFs from 'fs';
 import path from 'path';
 import { execSync, execFileSync } from 'child_process';
 
@@ -115,6 +116,7 @@ export class WikiGenerator {
   private storagePath: string;
   private wikiDir: string;
   private lbugPath: string;
+  private skillDirectivesCache: string | null = null;
   private llmConfig: LLMConfig;
   private maxTokensPerModule: number;
   private concurrency: number;
@@ -206,8 +208,42 @@ export class WikiGenerator {
    */
   private buildSystemPrompt(base: string): string {
     const lang = this.effectiveLang();
-    if (!lang) return base;
-    return `${base}\n\nIMPORTANT: Write ALL documentation content in ${lang}. This includes prose, code comments in examples, and diagram labels. Note: page titles (H1 headings) are generated separately and will remain in English.`;
+    let out = base;
+    if (lang) {
+      out += `\n\nIMPORTANT: Write ALL documentation content in ${lang}. This includes prose, code comments in examples, and diagram labels. Note: page titles (H1 headings) are generated separately and will remain in English.`;
+    }
+    // Repository skill directives (.gitnexus/wiki-skills/*.md) — appended as
+    // methodology guidance so each platform/repo can steer LLM output without
+    // code changes (generic fallback = the built-in base prompt).
+    const skills = this.loadSkillDirectives();
+    if (skills) {
+      out += `\n\n# Repository Skill Directives (MUST follow)\n${skills}`;
+    }
+    return out;
+  }
+
+  /**
+   * Load repo-level wiki skills from <storagePath>/wiki-skills/*.md (sorted by
+   * filename, cached after first read). Missing directory → empty string.
+   */
+  private loadSkillDirectives(): string {
+    if (this.skillDirectivesCache !== null) return this.skillDirectivesCache;
+    const dir = path.join(this.storagePath, 'wiki-skills');
+    try {
+      const files = nodeFs
+        .readdirSync(dir)
+        .filter((f) => f.endsWith('.md'))
+        .sort();
+      this.skillDirectivesCache = files
+        .map(
+          (f) =>
+            `\n<!-- skill: ${f} -->\n${nodeFs.readFileSync(path.join(dir, f), 'utf8')}`,
+        )
+        .join('\n');
+    } catch {
+      this.skillDirectivesCache = '';
+    }
+    return this.skillDirectivesCache;
   }
 
   /**

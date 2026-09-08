@@ -144,7 +144,7 @@ export async function resolveLLMConfig(overrides?: Partial<LLMConfig>): Promise<
         ? ''
         : (reuseSavedHttpConfig ? savedConfig.model : undefined) ||
           (savedProvider === 'minimax' ? MINIMAX_MODEL_IDS[0] : '')),
-    maxTokens: overrides?.maxTokens ?? 16_384,
+    maxTokens: overrides?.maxTokens ?? 32_768,
     temperature: overrides?.temperature ?? 0,
     provider: savedProvider,
     apiVersion:
@@ -302,6 +302,8 @@ export function buildRequestUrl(baseUrl: string, apiVersion: string | undefined)
 
 export interface CallLLMOptions {
   onChunk?: (charsReceived: number) => void;
+  /** Internal: empty-response retry counter (not for external use). */
+  __emptyRetry?: number;
 }
 
 /**
@@ -345,7 +347,12 @@ export async function callLLM(
     : isReasoningModel(config.model, config.isReasoningModel);
 
   const url = buildRequestUrl(config.baseUrl, azure ? config.apiVersion : undefined);
-  const useStream = !!options?.onChunk;
+  // Non-streaming by default: the gateway (llm.thundersoft.com) drops or
+  // truncates long streaming generations (observed multi-KB wiki outputs;
+  // ADR-031 #4). Non-streaming requests complete reliably (87s / 3.6k chars
+  // verified). Streaming can be re-enabled per-call by setting
+  // CallLLMOptions.onChunk ONLY when the gateway proves stable.
+  const useStream = false;
 
   // Build request body — reasoning models reject temperature and use max_completion_tokens
   const body: Record<string, unknown> = {
@@ -446,13 +453,38 @@ export async function callLLM(
 
   // Streaming path
   if (useStream && response.body) {
-    return await readSSEStream(response.body, options!.onChunk!);
+    try {
+      return await readSSEStream(response.body, options!.onChunk!);
+    } catch (err) {
+      if (
+        err instanceof Error &&
+        err.message === 'LLM returned empty streaming response'
+      ) {
+        // Some gateways return an empty stream on long generations.
+        // Retry once in non-streaming mode before giving up.
+        return callLLM(prompt, config, systemPrompt, {
+          ...options,
+          onChunk: undefined,
+        });
+      }
+      throw err;
+    }
   }
 
   // Non-streaming path
   const json = (await response.json()) as any;
   const choice = json.choices?.[0];
   if (!choice?.message?.content) {
+    // Gateway sometimes returns HTTP 200 with an empty choice. Retry with
+    // backoff (up to 2 retries) before giving up — do not kill the whole run.
+    const retryCount = (options as { __emptyRetry?: number }).__emptyRetry ?? 0;
+    if (retryCount < 2) {
+      await new Promise((r) => setTimeout(r, 1500 * (retryCount + 1)));
+      return callLLM(prompt, config, systemPrompt, {
+        ...options,
+        __emptyRetry: retryCount + 1,
+      });
+    }
     throw new Error('LLM returned empty response');
   }
 
