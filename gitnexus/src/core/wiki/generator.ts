@@ -13,7 +13,11 @@
 import fs from 'fs/promises';
 import nodeFs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { execSync, execFileSync } from 'child_process';
+
+/** ESM-safe directory of this module (dist/src/core/wiki). */
+const WIKI_MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 
 import {
   initWikiDb,
@@ -76,6 +80,16 @@ export interface WikiOptions {
   reviewOnly?: boolean;
   /** Output language for generated documentation (e.g. 'english', 'chinese', 'spanish') */
   lang?: string;
+  /**
+   * Domain skill stem (ADR-034): loads only `domain-<stem>.md` from repo wiki-skills.
+   * Example: `wifi` → `domain-wifi.md`. When set, other `domain-*.md` are skipped.
+   */
+  domainSkill?: string;
+  /**
+   * Optional extra layout skill filename stem from repo wiki-skills
+   * (e.g. `layout-wifi` → `layout-wifi.md`), loaded after builtins.
+   */
+  layoutSkill?: string;
 }
 
 export interface WikiMeta {
@@ -223,27 +237,114 @@ export class WikiGenerator {
   }
 
   /**
-   * Load repo-level wiki skills from <storagePath>/wiki-skills/*.md (sorted by
-   * filename, cached after first read). Missing directory → empty string.
+   * Load wiki skills (cached after first read).
+   * Order (ADR-034): builtin wiki-layout → builtin show-me → other builtins →
+   * GITNEXUS_WIKI_FORCE_SKILLS → repo layout override → repo domain (selected) /
+   * repo non-domain files. Same filename later is skipped.
    */
   private loadSkillDirectives(): string {
     if (this.skillDirectivesCache !== null) return this.skillDirectivesCache;
-    const dir = path.join(this.storagePath, 'wiki-skills');
-    try {
-      const files = nodeFs
-        .readdirSync(dir)
-        .filter((f) => f.endsWith('.md'))
-        .sort();
-      this.skillDirectivesCache = files
-        .map(
-          (f) =>
-            `\n<!-- skill: ${f} -->\n${nodeFs.readFileSync(path.join(dir, f), 'utf8')}`,
-        )
-        .join('\n');
-    } catch {
-      this.skillDirectivesCache = '';
+    const parts: string[] = [];
+    const seen = new Set<string>();
+    const appendFile = (filePath: string, tag: string, displayName: string) => {
+      if (seen.has(displayName)) return;
+      try {
+        const body = nodeFs.readFileSync(filePath, 'utf8');
+        seen.add(displayName);
+        parts.push(`\n<!-- skill:${tag}:${displayName} -->\n${body}`);
+      } catch {
+        /* missing file → skip */
+      }
+    };
+    const loadNamed = (dir: string, names: string[], tag: string) => {
+      for (const f of names) {
+        appendFile(path.join(dir, f), tag, f);
+      }
+    };
+    const listMd = (dir: string): string[] => {
+      try {
+        return nodeFs
+          .readdirSync(dir)
+          .filter((f) => f.endsWith('.md'))
+          .sort();
+      } catch {
+        return [];
+      }
+    };
+
+    const builtinDir = path.join(WIKI_MODULE_DIR, 'builtin-skills');
+    // Fixed order: layout before show-me (ADR-034); show-me.md body left untouched
+    loadNamed(builtinDir, ['wiki-layout.md', 'show-me.md'], 'builtin');
+    for (const f of listMd(builtinDir)) {
+      if (f === 'wiki-layout.md' || f === 'show-me.md') continue;
+      appendFile(path.join(builtinDir, f), 'builtin', f);
     }
+
+    const forceExtra = (process.env.GITNEXUS_WIKI_FORCE_SKILLS ?? '').trim();
+    if (forceExtra) {
+      for (const f of listMd(forceExtra)) {
+        appendFile(path.join(forceExtra, f), 'force', f);
+      }
+    }
+
+    const { domainSkill, layoutSkill } = this.resolveWikiSkillConfig();
+    const repoDir = path.join(this.storagePath, 'wiki-skills');
+    const repoFiles = listMd(repoDir);
+
+    if (layoutSkill) {
+      const layoutFile = layoutSkill.endsWith('.md')
+        ? layoutSkill
+        : `${layoutSkill}.md`;
+      appendFile(path.join(repoDir, layoutFile), 'repo-layout', layoutFile);
+    }
+
+    if (domainSkill) {
+      const domainFile = domainSkill.endsWith('.md')
+        ? domainSkill
+        : domainSkill.startsWith('domain-')
+          ? `${domainSkill}.md`
+          : `domain-${domainSkill}.md`;
+      appendFile(path.join(repoDir, domainFile), 'repo-domain', domainFile);
+      // Also allow non-domain repo helpers (not domain-*)
+      for (const f of repoFiles) {
+        if (f.startsWith('domain-')) continue;
+        if (layoutSkill && (f === layoutSkill || f === `${layoutSkill}.md`)) continue;
+        appendFile(path.join(repoDir, f), 'repo', f);
+      }
+    } else {
+      // No domain selected: load repo skills except domain-*.md (avoid cross-domain bleed)
+      for (const f of repoFiles) {
+        if (f.startsWith('domain-')) continue;
+        appendFile(path.join(repoDir, f), 'repo', f);
+      }
+    }
+
+    this.skillDirectivesCache = parts.join('\n');
     return this.skillDirectivesCache;
+  }
+
+  /** CLI options override `.gitnexus/wiki.config.json` fields domainSkill / layoutSkill. */
+  private resolveWikiSkillConfig(): {
+    domainSkill?: string;
+    layoutSkill?: string;
+  } {
+    let domainSkill = (this.options.domainSkill ?? '').trim() || undefined;
+    let layoutSkill = (this.options.layoutSkill ?? '').trim() || undefined;
+    try {
+      const raw = nodeFs.readFileSync(
+        path.join(this.storagePath, 'wiki.config.json'),
+        'utf8',
+      );
+      const cfg = JSON.parse(raw) as {
+        domainSkill?: string;
+        layoutSkill?: string;
+      };
+      if (!domainSkill && cfg.domainSkill) domainSkill = String(cfg.domainSkill).trim();
+      if (!layoutSkill && cfg.layoutSkill) layoutSkill = String(cfg.layoutSkill).trim();
+    } catch {
+      /* no config */
+    }
+    return { domainSkill, layoutSkill };
   }
 
   /**
@@ -376,24 +477,45 @@ export class WikiGenerator {
   private async fullGeneration(currentCommit: string): Promise<WikiRunResult> {
     let pagesGenerated = 0;
 
-    // Phase 0: Gather structure
-    this.onProgress('gather', 5, 'Querying graph for file structure...');
-    const filesWithExports = await getFilesWithExports();
-    const allFiles = await getAllFiles();
-
-    // Filter to source files only
-    const sourceFiles = allFiles.filter((f) => !shouldIgnorePath(f));
-    if (sourceFiles.length === 0) {
-      throw new Error('No source files found in the knowledge graph. Nothing to document.');
+    // If an edited module_tree.json is already present, skip Phase 0 full-graph
+    // gather (ADR-032 追记1: large repos spin for tens of minutes on
+    // getFilesWithExports; battman-scoped regen only needs the edited tree).
+    const editablePath = path.join(this.wikiDir, 'module_tree.json');
+    let hasEditedTree = false;
+    try {
+      const edited = JSON.parse(await fs.readFile(editablePath, 'utf-8'));
+      hasEditedTree = Array.isArray(edited) && edited.length > 0;
+    } catch {
+      /* no edited tree */
     }
 
-    // Build enriched file list (merge exports into all source files)
-    const exportMap = new Map(filesWithExports.map((f) => [f.filePath, f]));
-    const enrichedFiles: FileWithExports[] = sourceFiles.map((fp) => {
-      return exportMap.get(fp) || { filePath: fp, symbols: [] };
-    });
+    let enrichedFiles: FileWithExports[] = [];
+    if (!hasEditedTree) {
+      // Phase 0: Gather structure
+      this.onProgress('gather', 5, 'Querying graph for file structure...');
+      const filesWithExports = await getFilesWithExports();
+      const allFiles = await getAllFiles();
 
-    this.onProgress('gather', 10, `Found ${sourceFiles.length} source files`);
+      // Filter to source files only
+      const sourceFiles = allFiles.filter((f) => !shouldIgnorePath(f));
+      if (sourceFiles.length === 0) {
+        throw new Error('No source files found in the knowledge graph. Nothing to document.');
+      }
+
+      // Build enriched file list (merge exports into all source files)
+      const exportMap = new Map(filesWithExports.map((f) => [f.filePath, f]));
+      enrichedFiles = sourceFiles.map((fp) => {
+        return exportMap.get(fp) || { filePath: fp, symbols: [] };
+      });
+
+      this.onProgress('gather', 10, `Found ${sourceFiles.length} source files`);
+    } else {
+      this.onProgress(
+        'gather',
+        10,
+        'Skipping full-graph gather (using existing module_tree.json)',
+      );
+    }
 
     // Phase 1: Build module tree
     const moduleTree = await this.buildModuleTree(enrichedFiles);

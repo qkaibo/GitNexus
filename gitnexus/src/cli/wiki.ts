@@ -44,6 +44,9 @@ export interface WikiCommandOptions {
   retries?: string;
   lang?: string;
   allowInsecureConnection?: string;
+  /** ADR-034: domain skill stem → domain-<stem>.md */
+  domain?: string;
+  layoutSkill?: string;
 }
 
 function parsePositiveIntegerOption(
@@ -173,8 +176,9 @@ const wikiCommandImpl = async (inputPath?: string, options?: WikiCommandOptions)
     repoPath = gitRoot;
   }
 
-  if (!isGitRepo(repoPath)) {
+  if (!isGitRepo(repoPath) && process.env.GITNEXUS_WIKI_SKIP_GIT !== '1') {
     console.log('  Error: Not a git repository\n');
+    console.log('  Tip: set GITNEXUS_WIKI_SKIP_GIT=1 for non-git roots (e.g. qcm4490).\n');
     process.exitCode = 1;
     return;
   }
@@ -556,6 +560,8 @@ const wikiCommandImpl = async (inputPath?: string, options?: WikiCommandOptions)
     concurrency: options?.concurrency ? parseInt(options.concurrency, 10) : undefined,
     reviewOnly: options?.review,
     lang: options?.lang,
+    domainSkill: options?.domain,
+    layoutSkill: options?.layoutSkill,
   };
 
   const generator = new WikiGenerator(

@@ -331,6 +331,14 @@ program
     '--lang <lang>',
     'Output language for generated documentation (e.g. english, chinese, spanish, japanese)',
   )
+  .option(
+    '--domain <name>',
+    'Load only domain-<name>.md from .gitnexus/wiki-skills (ADR-034; e.g. wifi → domain-wifi.md)',
+  )
+  .option(
+    '--layout-skill <name>',
+    'Optional repo layout skill stem (e.g. layout-wifi → layout-wifi.md)',
+  )
   .action(createLbugLazyAction(() => import('./wiki.js'), 'wikiCommand'));
 
 program

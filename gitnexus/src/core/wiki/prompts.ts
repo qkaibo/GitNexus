@@ -55,11 +55,7 @@ Deep mechanism requirements (MANDATORY for production-quality docs):
    (d) After every mermaid diagram, add 2-3 plain sentences reading the diagram. Explain the first occurrence of technical terms in plain words.
    (e) Close with: memory-hook table (<=10 one-liners), 证据索引 table (symbols with file:line), and an honest-notes section listing anything not verified (do not fabricate).
    Prefer depth and richness over brevity: if a section would be a mere listing, compress it; if a mechanism matters, expand it with code, diagram, and plain explanation.
-6. Visual style (make the document inviting at a glance — pure Markdown only, NO inline HTML for styling; every renderer incl. GitHub/plain viewers must show it cleanly):
-   - Emoji color chips as section markers: 🟢 for the intuition/foundation block at the top, 🟠 for main section headings, 🟦 for structure/concept callouts, 🟣 for analogy blocks, 🔍/🟨 for reading-the-diagram notes, ✅ for conclusions/why, ⚠️ for pitfalls, 🔴/🧪 for checkpoints.
-   - Blockquotes as callout boxes: scene (> 🎯), 30-second intuition (> 💡), analogy (> 📞), read-the-diagram (> 🔍), conclusion/why (> ✅), pitfall (> ⚠️), checkpoint (> 🧪 — e.g. "看完本节你能回答").
-   - Prefer tables over prose for comparisons and summaries; use emoji headers in table first row (e.g. | 🗂 文件 | 📋 职责 |). Use - [ ] checklists for checkpoints where natural.
-   - End the document with a one-line color legend: (> 🎨 色标图例: 🟦 结构/概念 · 🟠 主章节 · 🟩 结论 · 🟣 比喻 · 🟨 注意 · 🔴 检查点).`;
+6. Visual style (color chips, callout blockquotes, diagram budget, color legend): follow the **wiki-layout** skill directives appended to this system prompt. Keep pure Markdown only (no inline HTML for styling).`;
 
 export const MODULE_USER_PROMPT = `Write documentation for the **{{MODULE_NAME}}** module.
 
